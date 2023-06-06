@@ -5,7 +5,6 @@ import sys
 
 from pyppeteer import launch
 
-from db import create_db
 from scraping import (get_filiales_data, get_reviews_through_api,
                       scrape_filiale_reviews)
 from utils import get_new_page
@@ -14,7 +13,6 @@ from utils import get_new_page
 async def main(headless):
     format = "%(levelname)s:%(asctime)s:%(message)s"
     logging.basicConfig(format=format, level=logging.INFO, datefmt="%H:%M:%S")
-    create_db()
     browser = await launch(executablePath='/usr/bin/microsoft-edge',
                            headless=headless,
                            args=['--no-sandbox', '--disable-setuid-sandbox'])
@@ -24,7 +22,7 @@ async def main(headless):
 
     key, data = await get_filiales_data(page, company_name='ташир пицца')
 
-    # get_reviews_through_api(key, data)
+    # reviews = get_reviews_through_api(key, data)
 
     if not data:
         logging.info('no filiales found')

@@ -11,7 +11,6 @@ from pyppeteer.page import Page
 from requests_html import HTML, HTMLSession
 
 import config
-from db import save_reviews_to_db
 from utils import clean_text, get_new_page, get_reviews_api_key, save_cookies
 
 
@@ -86,15 +85,15 @@ async def get_review_data(page: Page, review: ElementHandle) -> dict:
     # Scrape the date of the comment
     date = html_object.find('div._4mwq3d', first=True).text
 
-    # Scrape the images uploaded (if any)
-    images = [img.attrs['src'] for img in html_object.find('img._1env6hv')]
+    # Scrape the photos uploaded (if any)
+    photos = [img.attrs['src'] for img in html_object.find('img._1env6hv')]
 
     # Scrape the comment
-    comment = None
+    text = None
     try:
-        comment = html_object.find('div._49x36f a._ayej9u3', first=True).text
+        text = html_object.find('div._49x36f a._ayej9u3', first=True).text
     except AttributeError:
-        comment = html_object.find('a._1it5ivp', first=True).text
+        text = html_object.find('a._1it5ivp', first=True).text
 
     # Scrape the reply (if any)
     reply_element = html_object.find('div._sgs1pz', first=True)
@@ -104,13 +103,17 @@ async def get_review_data(page: Page, review: ElementHandle) -> dict:
         reply_date = reply_element.find('div._1fw4r5p',
                                         first=True).text.split(',')[0]
         reply_text = reply_element.find('div._j1il10', first=True).text
-        reply = {'name': reply_name, 'date': reply_date, 'text': reply_text}
+        reply = {
+            'org_name': clean_text(reply_name),
+            'date': reply_date,
+            'text': clean_text(reply_text)
+        }
 
     return {
         'name': name,
         'date': date,
-        'images': images,
-        'comment': comment,
+        'photos': photos,
+        'text': clean_text(text),
         'reply': reply
     }
 
@@ -182,10 +185,6 @@ async def scrape_filiale_reviews(filiale_data: dict,
         logging.info(
             f"extracted {len(reviews)} reviews from {filiale_data['name']}")
 
-        logging.info(f"Saving reviews from {filiale_data['name']}")
-        save_reviews_to_db(filiale_data['name'], reviews)
-        logging.info(
-            f"Saved {len(reviews)} reviews from {filiale_data['name']}")
         await save_cookies(page)
         return reviews
     finally:
@@ -224,6 +223,25 @@ def get_branches(company_name: Optional[str] = "ташир пицца",
     return branches
 
 
+def clean_api_reviews(reviews: list) -> list:
+
+    cleaned = [{
+        'id':
+        review['id'],
+        'name':
+        review['user']['name'],
+        'text':
+        review['text'],
+        'date':
+        review['date_created'],
+        'photos': [photo['preview_urls']['url'] for photo in review['photos']],
+        'reply':
+        review['official_answer']
+    } for review in reviews]
+
+    return cleaned
+
+
 def get_branch_reviews(branch_id: str,
                        key: str,
                        branch_name: str | None = None) -> list:
@@ -249,7 +267,7 @@ def get_branch_reviews(branch_id: str,
 
     if branch_name is not None:
         logging.info(f'Got reviews for {branch_name}')
-    return reviews
+    return clean_api_reviews(reviews)
 
 
 def get_reviews_through_api(key: str, branches_data: list) -> list:
@@ -264,3 +282,5 @@ def get_reviews_through_api(key: str, branches_data: list) -> list:
         ]
         for f in concurrent.futures.as_completed(results):
             end_data.extend(f.result())
+
+    return end_data

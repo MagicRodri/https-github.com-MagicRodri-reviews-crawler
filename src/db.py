@@ -1,49 +1,47 @@
-import json
-import sqlite3
+from pymongo import MongoClient
+from pymongo.collection import Collection
+from pymongo.database import Database
+
+import config
 
 
-def get_db_connection() -> sqlite3.Connection:
-    connection = sqlite3.connect('reviews.db')
-    return connection
+def get_db() -> Database:
+    client = MongoClient(config.MONGO_URI)
+    db = client[config.MONGO_DB_NAME]
+    return db
 
 
-def create_db():
-    conn = get_db_connection()
-    db = conn.cursor()
-    # Create the reviews table
-    db.execute('''
-        CREATE TABLE IF NOT EXISTS reviews (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            filiale CHAR(50),
-            name CHAR(50),
-            date CHAR(50),
-            images TEXT,
-            comment TEXT,
-            reply_name CHAR(50),
-            reply_date CHAR(50),
-            reply_text TEXT
+def get_reviews_collection() -> Collection:
+    db = get_db()
+    reviews = db.reviews
+    if 'id_text' not in reviews.index_information():
+        reviews.create_index(
+            [('id', 'text')],
+            unique=True,
         )
-    ''')
-    conn.commit()
-    conn.close()
+    return reviews
 
 
-def save_reviews_to_db(filiale: str, reviews: list[dict]):
-    conn = get_db_connection()
-    db = conn.cursor()
+def insert_review(raw_review: dict):
+    reviews_db = get_reviews_collection()
+    inserted = reviews_db.insert_one(raw_review)
+    return inserted.inserted_id
 
-    sql = '''
-        INSERT INTO reviews (filiale, name, date, images, comment, reply_name, reply_date, reply_text)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)'''
 
-    rows = []
-    for review in reviews:
-        values = (filiale, review['name'], review['date'],
-                  json.dumps(review['images']), review['comment'],
-                  review['reply'].get('name'), review['reply'].get('date'),
-                  review['reply'].get('text'))
-        rows.append(values)
+def insert_reviews(raw_reviews: list[dict]):
 
-    db.executemany(sql, rows)
+    reviews_db = get_reviews_collection()
+    inserted = reviews_db.insert_many(raw_reviews)
+    return inserted.inserted_ids
 
-    conn.commit()
+
+if __name__ == '__main__':
+    a = {
+        'id': 1,
+        'text': 'text',
+        'reply': None,
+    }
+    b = [a, a]
+    reviews_db = get_reviews_collection()
+
+    print(reviews_db.count_documents({}))
