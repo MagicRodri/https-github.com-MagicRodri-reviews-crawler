@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import logging
 from typing import Optional
 
@@ -7,7 +8,7 @@ from pyppeteer.browser import Browser
 from pyppeteer.element_handle import ElementHandle
 from pyppeteer.errors import ElementHandleError
 from pyppeteer.page import Page
-from requests_html import HTML
+from requests_html import HTML, HTMLSession
 
 import config
 from db import save_reviews_to_db
@@ -191,8 +192,44 @@ async def scrape_filiale_reviews(filiale_data: dict,
         await page.close()
 
 
-def get_branch_reviews(branch_id: str, key: str) -> list:
+def get_branches(company_name: Optional[str] = "ташир пицца",
+                 city: Optional[str] = 'moscow') -> list[dict]:
+
+    url = f"https://2gis.ru/{city}/search/{company_name}"
+    session = HTMLSession()
+    res = session.get(url)
+    first_response_url = res.url
+    is_empty_page = False
+    branches = []
+    counter = 1
+    while True:
+        url = f"https://2gis.ru/{city}/search/{company_name}"
+        divs = res.html.find('div._1kf6gff')
+        for div in divs:
+            name = div.find('div._klarpw span._1w9o2igt', first=True).text
+            link = div.find('div._zjunba a',
+                            first=True).attrs.get('href').split('?')[0]
+            branch = {'name': clean_text(name), 'link': link}
+            branches.append(branch)
+
+        # TODO: Deal with url returning down to first page
+        counter += 1
+        res = session.get(f"{url}/page/{counter}")
+        is_empty_page = res.html.find(
+            'div._1wpb8t2',
+            first=True) is not None or res.url == first_response_url
+        if is_empty_page:
+            break
+
+    return branches
+
+
+def get_branch_reviews(branch_id: str,
+                       key: str,
+                       branch_name: str | None = None) -> list:
     """Get branch reviews through public api"""
+    if branch_name is not None:
+        logging.info(f'Getting reviews for {branch_name}')
     endpoint = f"{config.REVIEW_API_URL}/{branch_id}/reviews"
     params = {'key': key, 'limit': 50}
     res = requests.get(endpoint, params=params)
@@ -210,14 +247,20 @@ def get_branch_reviews(branch_id: str, key: str) -> list:
             break
         res = requests.get(next_link)
 
+    if branch_name is not None:
+        logging.info(f'Got reviews for {branch_name}')
     return reviews
 
 
 def get_reviews_through_api(key: str, branches_data: list) -> list:
-    branches_data = [{
-        'name': item['name'],
-        'branch_id': item['link'].split('/')[-1]
-    } for item in branches_data]
-
-    for name, id in branches_data:
-        reviews = get_branch_reviews(id, key)
+    """Get reviews through public api"""
+    end_data = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        results = [
+            executor.submit(get_branch_reviews,
+                            branch_data['link'].split('/')[-1], key,
+                            branch_data['name'])
+            for branch_data in branches_data
+        ]
+        for f in concurrent.futures.as_completed(results):
+            end_data.extend(f.result())

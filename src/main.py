@@ -6,7 +6,8 @@ import sys
 from pyppeteer import launch
 
 from db import create_db
-from scraping import get_filiales_data, scrape_filiale_reviews
+from scraping import (get_filiales_data, get_reviews_through_api,
+                      scrape_filiale_reviews)
 from utils import get_new_page
 
 
@@ -23,17 +24,19 @@ async def main(headless):
 
     key, data = await get_filiales_data(page, company_name='ташир пицца')
 
-    # if not data:
-    #     logging.info('no filiales found')
-    #     await browser.close()
-    #     sys.exit(0)
+    # get_reviews_through_api(key, data)
 
-    # tasks = [
-    #     asyncio.create_task(scrape_filiale_reviews(filiale, browser=browser))
-    #     for filiale in data
-    # ]
+    if not data:
+        logging.info('no filiales found')
+        await browser.close()
+        sys.exit(0)
 
-    # await asyncio.gather(*tasks)
+    tasks = [
+        asyncio.create_task(scrape_filiale_reviews(filiale, browser=browser))
+        for filiale in data
+    ]
+
+    await asyncio.gather(*tasks)
 
     await browser.close()
 
