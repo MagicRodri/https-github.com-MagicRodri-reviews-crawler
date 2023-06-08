@@ -2,6 +2,6 @@ pyppeteer
 requests-html
 fake_useragent
 pymongo
-python-telegram-bot[webhooks,job-queue]
+python-telegram-bot[webhooks,job-queue,callback-data]
 python-dotenv
 dnspython

@@ -7,8 +7,7 @@ import sys
 
 from pyppeteer import launch
 
-from scraping import (get_branches_data, get_reviews_through_api,
-                      get_reviews_through_scraping)
+from scraping import get_branches_data, get_reviews_through_api
 from utils import get_new_page
 
 
@@ -28,8 +27,7 @@ async def main(headless):
         logging.info('no branches found')
         await browser.close()
         sys.exit(0)
-    # reviews = get_reviews_through_api(key, data)
-    reviews = await get_reviews_through_scraping(browser, data)
+    reviews = get_reviews_through_api(key, data)
     pprint.pprint(reviews)
     with open('scraped.json', 'w') as f:
         json.dump(reviews, f, ensure_ascii=False, indent=4)

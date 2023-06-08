@@ -10,13 +10,8 @@ from pyppeteer.page import Page
 from requests_html import HTML, HTMLSession
 
 import config
-from utils import (
-    clean_text,
-    get_new_page,
-    get_reviews_api_key,
-    safe_close_page,
-    save_cookies,
-)
+from utils import (clean_text, get_new_page, get_reviews_api_key,
+                   safe_close_page, save_cookies)
 
 
 async def _close_cookies_footer_if_needed(page: Page,
@@ -214,7 +209,13 @@ def get_branches(company_name: Optional[str] = "ташир пицца",
 
     url = f"https://2gis.ru/{city}/search/{company_name}"
     session = HTMLSession()
+
+    # Force the first request to succeed
+    # TODO Set a retry limit
     res = session.get(url)
+    while res.status_code != 200:
+        res = session.get(url)
+
     first_response_url = res.url
     is_empty_page = False
     branches = []
