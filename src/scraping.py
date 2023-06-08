@@ -274,12 +274,14 @@ def clean_api_reviews(reviews: list) -> list:
 
 def get_branch_reviews(branch_id: str,
                        key: str,
-                       branch_name: str | None = None) -> list:
+                       branch_name: str | None = None,
+                       limit: int = 50,
+                       get_all: bool = False) -> list:
     """Get branch reviews through public api"""
     if branch_name is not None:
         logging.info(f'Getting reviews for {branch_name}')
     endpoint = f"{config.REVIEW_API_URL}/{branch_id}/reviews"
-    params = {'key': key, 'limit': 50}
+    params = {'key': key, 'limit': limit, 'sort_by': 'date_created'}
     session = HTMLSession()
     res = session.get(endpoint, params=params)
     reviews = []
@@ -291,6 +293,8 @@ def get_branch_reviews(branch_id: str,
             break
         data = res.json()
         reviews.extend(data['reviews'])
+        if not get_all:
+            break
         next_link = data['meta'].get('next_link')
         if not next_link:
             break

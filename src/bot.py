@@ -6,14 +6,14 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ContextTypes, MessageHandler, filters)
 
-from db import (get_branches_collection, get_companies_collection,
-                get_reviews_collection, get_users_collection)
-from scraping import get_branches
+import db
+from config import REVIEW_KEY
+from scraping import get_branch_reviews, get_branches
+from utils import get_cached_datetime, send_review, set_cached_datetime
 
-users_db = get_users_collection()
-companies_db = get_companies_collection()
-branches_db = get_branches_collection()
-reviews_db = get_reviews_collection()
+users_db = db.get_users_collection()
+companies_db = db.get_companies_collection()
+branches_db = db.get_branches_collection()
 
 
 def build_branches_markup(branches: list) -> InlineKeyboardMarkup:
@@ -127,12 +127,27 @@ async def send_daily_timetable(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def send_each_minute(context: ContextTypes.DEFAULT_TYPE):
+    try:
+        last_sent_at = get_cached_datetime()
+        branches_with_users_ids = db.get_branches_with_users(users_db)
+        logging.info("Sending repeating message")
+        for dico in branches_with_users_ids:
+            user_ids = dico['user_ids']
 
-    logging.info("Sending repeating message")
-    # await context.bot.send_message(
-    #     chat_id=1101717289,
-    #     text="This message is sent every minute",
-    # )
+            reviews = get_branch_reviews(dico['branch_id'],
+                                         REVIEW_KEY,
+                                         limit=5)
+            for review in reviews:
+                await send_review(context, user_ids[0], review)
+                break
+            break
+            # review_date = datetime.datetime.fromisoformat(
+            #     review['date']).astimezone()
+            # if review_date > last_sent_at:
+            #     for user_id in user_ids:
+            #         await send_review(context, user_id, review)
+    finally:
+        set_cached_datetime(datetime.datetime.now())
 
 
 def setup(app: Application):
@@ -142,5 +157,5 @@ def setup(app: Application):
     app.add_handler(
         CallbackQueryHandler(callback=confirm_company, pattern=list))
     app.add_handler(CallbackQueryHandler(callback=branch_choice, pattern=str))
-    # job_queue = app.job_queue
-    # job_queue.run_repeating(send_each_minute, interval=60, first=0)
+    job_queue = app.job_queue
+    job_queue.run_repeating(send_each_minute, interval=60, first=0)

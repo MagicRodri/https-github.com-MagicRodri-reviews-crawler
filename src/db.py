@@ -1,3 +1,5 @@
+import datetime
+
 import pymongo
 from pymongo.collection import Collection
 from pymongo.database import Database
@@ -52,25 +54,56 @@ def get_users_collection(db: Database = get_db()) -> Collection:
     return users_db
 
 
-def insert_review(raw_review: dict):
-    reviews_db = get_reviews_collection()
-    inserted = reviews_db.insert_one(raw_review)
-    return inserted.inserted_id
-
-
-def insert_reviews(raw_reviews: list[dict]):
-
-    reviews_db = get_reviews_collection()
-    inserted = reviews_db.insert_many(raw_reviews)
-    return inserted.inserted_ids
+def get_branches_with_users(users_db: Database):
+    """Get branches along with users subscribed to them"""
+    pipeline = [{
+        "$unwind": "$branches"
+    }, {
+        "$match": {
+            "branches.company": {
+                "$exists": True
+            }
+        }
+    }, {
+        "$group": {
+            "_id": {
+                "branch_id": "$branches.id",
+                "branch_name": "$branches.name"
+            },
+            "user_ids": {
+                "$addToSet": "$id"
+            }
+        }
+    }, {
+        "$project": {
+            "_id": 0,
+            "branch_id": "$_id.branch_id",
+            "branch_name": "$_id.branch_name",
+            "user_ids": 1
+        }
+    }]
+    return list(users_db.aggregate(pipeline))
 
 
 if __name__ == '__main__':
-    a = {
-        'id': 1,
-        'text': 'text',
-        'reply': None,
-    }
-    reviews_db = get_reviews_collection()
-
-    print(reviews_db.index_information())
+    users_db = get_users_collection()
+    # users_db.insert_one({
+    #     'id': 1,
+    #     'username': 'test2',
+    #     'branches': [],
+    #     'created_at': datetime.datetime.now()
+    # })
+    # users_db.insert_one({
+    #     'id':
+    #     2,
+    #     'username':
+    #     'test3',
+    #     'branches': [{
+    #         '_id': 1,
+    #         'name': 'test',
+    #         'company': 'test'
+    #     }],
+    #     'created_at':
+    #     datetime.datetime.now()
+    # })
+    print(get_branches_with_users(users_db))
