@@ -8,8 +8,10 @@ from urllib.parse import parse_qs, urlparse
 
 from fake_useragent import UserAgent
 from pyppeteer.browser import Browser
+from pyppeteer.network_manager import Request
 from pyppeteer.page import Page
 from telegram import InputMediaPhoto
+from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 import config
@@ -65,7 +67,7 @@ async def get_reviews_api_key(page: Page, reviews_url: str) -> str:
     intercepted_request = None
     page.on('request', lambda req: asyncio.ensure_future(intercept(req)))
 
-    async def intercept(request):
+    async def intercept(request: Request):
         nonlocal intercepted_request
         if request.url.startswith(config.REVIEW_API_URL):
             intercepted_request = request
@@ -92,11 +94,11 @@ def get_cached_datetime():
         with open(cache_file, "rb") as file:
             cached_datetime = pickle.load(file)
     except (FileNotFoundError, pickle.UnpicklingError):
-        cached_datetime = datetime.datetime.now().astimezone()
+        cached_datetime = datetime.datetime.now()
         with open(cache_file, "wb") as file:
             pickle.dump(cached_datetime, file)
 
-    return cached_datetime
+    return cached_datetime.astimezone()
 
 
 def set_cached_datetime(new_datetime: datetime.datetime):
@@ -106,17 +108,14 @@ def set_cached_datetime(new_datetime: datetime.datetime):
 
 async def send_review(context: ContextTypes.DEFAULT_TYPE, user_id: str,
                       review: dict):
-    photos_urls = [
-        "https://cachizer1.2gis.com/reviews-photos/2a9d0f18-5436-4154-992e-5525c7f6e47e.jpg",
-        "https://cachizer1.2gis.com/reviews-photos/fab3e57a-bb66-4cd7-a817-159ed5b22530.jpg",
-        "https://cachizer1.2gis.com/reviews-photos/6260b11b-cbf5-4765-afb5-c0f9f801e95c.jpg"
-    ]
-
-    text = f"{review['name']}:\n{review['text']}"
+    photos_urls = review['photos']
+    text = f"<b>{review['name']}:</b>\n{review['text']}"
     if photos_urls:
-        media = [InputMediaPhoto(media=url) for url in photos_urls]
+        media = [InputMediaPhoto(url) for url in photos_urls]
         await context.bot.send_media_group(chat_id=user_id,
                                            media=media,
-                                           caption=text)
+                                           parse_mode=ParseMode.HTML)
 
-    await context.bot.send_message(chat_id=user_id, text=text)
+    await context.bot.send_message(chat_id=user_id,
+                                   text=text,
+                                   parse_mode=ParseMode.HTML)

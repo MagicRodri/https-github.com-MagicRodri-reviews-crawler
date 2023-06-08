@@ -5,3 +5,5 @@ pymongo
 python-telegram-bot[webhooks,job-queue,callback-data]
 python-dotenv
 dnspython
+emoji
+python-dateutil

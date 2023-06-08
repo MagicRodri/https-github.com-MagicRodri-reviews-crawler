@@ -1,7 +1,10 @@
+import asyncio
 import datetime
 import logging
 import pprint
 
+import emoji
+from dateutil.parser import isoparse
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ContextTypes, MessageHandler, filters)
@@ -36,9 +39,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'created_at': datetime.datetime.now()
         })
     logging.info("User %s started the bot" % (user_id))
-    start_message = """
-    Hello! I'm a bot 
-    """
+    start_message = emoji.emojize(
+        ":party_popper: Hey and welcome, I'm the bot who send you reviews from 2gis !"
+    )
     await context.bot.send_message(chat_id=user_id, text=start_message)
 
 
@@ -122,15 +125,13 @@ async def branch_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text=f'Branch {branch_id} chosen')
 
 
-async def send_daily_timetable(context: ContextTypes.DEFAULT_TYPE):
-    pass
-
-
 async def send_each_minute(context: ContextTypes.DEFAULT_TYPE):
     try:
         last_sent_at = get_cached_datetime()
+        logging.info(f"Last sent at {last_sent_at.isoformat()}")
         branches_with_users_ids = db.get_branches_with_users(users_db)
         logging.info("Sending repeating message")
+        tasks = []
         for dico in branches_with_users_ids:
             user_ids = dico['user_ids']
 
@@ -138,16 +139,18 @@ async def send_each_minute(context: ContextTypes.DEFAULT_TYPE):
                                          REVIEW_KEY,
                                          limit=5)
             for review in reviews:
-                await send_review(context, user_ids[0], review)
-                break
-            break
-            # review_date = datetime.datetime.fromisoformat(
-            #     review['date']).astimezone()
-            # if review_date > last_sent_at:
-            #     for user_id in user_ids:
-            #         await send_review(context, user_id, review)
-    finally:
-        set_cached_datetime(datetime.datetime.now())
+                review_date = isoparse(review['date']).astimezone()
+                if review_date < last_sent_at:
+                    continue
+                for user_id in user_ids:
+                    tasks.append(send_review(context, user_id, review))
+        await asyncio.gather(*tasks)
+    except Exception as e:
+        logging.error(e)
+    else:
+        if tasks:
+            logging.info("Sending repeating message done")
+            set_cached_datetime(datetime.datetime.now())
 
 
 def setup(app: Application):
