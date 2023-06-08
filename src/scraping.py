@@ -3,7 +3,6 @@ import concurrent.futures
 import logging
 from typing import Optional
 
-import requests
 from pyppeteer.browser import Browser
 from pyppeteer.element_handle import ElementHandle
 from pyppeteer.errors import ElementHandleError
@@ -11,11 +10,17 @@ from pyppeteer.page import Page
 from requests_html import HTML, HTMLSession
 
 import config
-from utils import clean_text, get_new_page, get_reviews_api_key, save_cookies
+from utils import (
+    clean_text,
+    get_new_page,
+    get_reviews_api_key,
+    safe_close_page,
+    save_cookies,
+)
 
 
-async def close_cookies_footer_if_needed(page: Page,
-                                         close_selector: str | None = None):
+async def _close_cookies_footer_if_needed(page: Page,
+                                          close_selector: str | None = None):
     if close_selector is None:
         close_selector = '._euwdl0'
     close_btn = await page.querySelector(close_selector)
@@ -23,25 +28,37 @@ async def close_cookies_footer_if_needed(page: Page,
         await close_btn.click()
 
 
-async def extract_filiales_data_from_divs(
+async def extract_branches_data_from_divs(
         page: Page, divs: list[ElementHandle]) -> list[dict]:
-    """Extract filiales links from divs"""
+    """Extract branches links from divs"""
 
     data = []
     if not divs:
         return data
+    org_name = None
     for div in divs:
         html = await page.evaluate('(element) => element.outerHTML', div)
         html_object = HTML(html=clean_text(html))
+        if org_name is None:
+            org_name = html_object.find('div span._1al0wlf span',
+                                        first=True).text
+            additional = html_object.find('span._oqoid', first=True).text
+            if additional:
+                org_name = f'{org_name}, {additional}'.capitalize()
         link = html_object.find('div._zjunba a',
                                 first=True).attrs.get('href').split('?')[0]
         name = html_object.find('div._klarpw span._1w9o2igt',
                                 first=True).text.strip()
-        data.append({'name': clean_text(name), 'link': link})
+        data.append({
+            'id': link.split('/')[-1],
+            'name': clean_text(name),
+            'link': link,
+            'org_name': org_name
+        })
     return data
 
 
-async def navigate_to_next_page(page: Page) -> bool:
+async def _navigate_to_next_page(page: Page) -> bool:
     """Navigate to the next page of the reviews"""
     try:
         active_btn_class = '_n5hmn94'
@@ -60,7 +77,7 @@ async def navigate_to_next_page(page: Page) -> bool:
     return False
 
 
-async def load_reviews(page: Page):
+async def _load_reviews(page: Page):
     """Load all reviews into the html page"""
     load_btn_class = '_1iczexgz'
     load_btn = await page.querySelector(f'.{load_btn_class}')
@@ -118,31 +135,32 @@ async def get_review_data(page: Page, review: ElementHandle) -> dict:
     }
 
 
-async def get_filiales_data(
+async def get_branches_data(
         page: Page,
+        city: Optional[str] = 'ufa',
         company_name: Optional[str] = 'Вкусно — и точка') -> tuple[str, list]:
-    """Get all filiales links from 2gis.ru"""
+    """Get all branches links from 2gis.ru"""
 
-    filiales_data = []
-    await page.goto(f'https://2gis.ru/search/{company_name}')
+    branches_data = []
+    await page.goto(f'https://2gis.ru/{city}/search/{company_name}')
     await page.waitForSelector('._1kf6gff')
-    await close_cookies_footer_if_needed(page)
+    await _close_cookies_footer_if_needed(page)
 
-    logging.info('Extracting filiales data')
+    logging.info('Extracting branches data')
     divs = await page.querySelectorAll('._1kf6gff')
-    filiales_data.extend(await extract_filiales_data_from_divs(page, divs))
-    while await navigate_to_next_page(page):
+    branches_data.extend(await extract_branches_data_from_divs(page, divs))
+    while await _navigate_to_next_page(page):
         divs = await page.querySelectorAll('._1kf6gff')
-        filiales_data.extend(await extract_filiales_data_from_divs(page, divs))
-    logging.info(f"Extracted {len(filiales_data)} filiales' data")
+        branches_data.extend(await extract_branches_data_from_divs(page, divs))
+    logging.info(f"Extracted {len(branches_data)} branches' data")
 
-    if filiales_data:
+    if branches_data:
         key = await get_reviews_api_key(
-            page, f"https://2gis.ru{filiales_data[0]['link']}/tab/reviews")
+            page, f"https://2gis.ru{branches_data[0]['link']}/tab/reviews")
 
     await save_cookies(page)
-    await page.close()
-    return key, filiales_data
+    await safe_close_page(page)
+    return key, branches_data
 
 
 def safe_scrape(scraper_function,
@@ -156,25 +174,24 @@ def safe_scrape(scraper_function,
 
 
 @safe_scrape
-async def scrape_filiale_reviews(filiale_data: dict,
-                                 page: Page | None = None,
-                                 browser: Browser | None = None,
-                                 ensure_reviews_loaded: Optional[bool] = True):
-    """Scrape reviews from a filiale"""
-
+async def scrape_branch_reviews(branch_data: dict,
+                                page: Page | None = None,
+                                browser: Browser | None = None,
+                                ensure_reviews_loaded: Optional[bool] = True):
+    """Scrape reviews from a branch"""
     if page is None and browser is None:
         raise RuntimeError('At least one of page or browser must be provided')
     if page is None:
         page = await get_new_page(browser)
 
     try:
-        await page.goto(f"https://2gis.ru{filiale_data['link']}/tab/reviews",
+        await page.goto(f"https://2gis.ru{branch_data['link']}/tab/reviews",
                         {'waitUntil': "domcontentloaded"})
 
-        logging.info(f"Extracting reviews from {filiale_data['name']}")
+        logging.info(f"Extracting reviews from {branch_data['name']}")
 
         if ensure_reviews_loaded:
-            await load_reviews(page)
+            await _load_reviews(page)
 
         divs = await page.querySelectorAll('._11gvyqv')
         reviews = []
@@ -183,16 +200,17 @@ async def scrape_filiale_reviews(filiale_data: dict,
             reviews.append(review)
 
         logging.info(
-            f"extracted {len(reviews)} reviews from {filiale_data['name']}")
+            f"extracted {len(reviews)} reviews from {branch_data['name']}")
 
         await save_cookies(page)
-        return reviews
+
     finally:
         await page.close()
+        return reviews
 
 
 def get_branches(company_name: Optional[str] = "ташир пицца",
-                 city: Optional[str] = 'moscow') -> list[dict]:
+                 city: Optional[str] = 'ufa') -> list[dict]:
 
     url = f"https://2gis.ru/{city}/search/{company_name}"
     session = HTMLSession()
@@ -201,14 +219,25 @@ def get_branches(company_name: Optional[str] = "ташир пицца",
     is_empty_page = False
     branches = []
     counter = 1
+    org_name = None
     while True:
         url = f"https://2gis.ru/{city}/search/{company_name}"
         divs = res.html.find('div._1kf6gff')
         for div in divs:
+            if org_name is None:
+                org_name = div.find('div span._1al0wlf span', first=True).text
+                additional = div.find('span._oqoid', first=True).text
+                if additional:
+                    org_name = f'{org_name}, {additional}'.capitalize()
             name = div.find('div._klarpw span._1w9o2igt', first=True).text
             link = div.find('div._zjunba a',
                             first=True).attrs.get('href').split('?')[0]
-            branch = {'name': clean_text(name), 'link': link}
+            branch = {
+                'id': link.split('/')[-1],
+                'name': clean_text(name),
+                'link': link,
+                'org_name': org_name
+            }
             branches.append(branch)
 
         # TODO: Deal with url returning down to first page
@@ -250,7 +279,8 @@ def get_branch_reviews(branch_id: str,
         logging.info(f'Getting reviews for {branch_name}')
     endpoint = f"{config.REVIEW_API_URL}/{branch_id}/reviews"
     params = {'key': key, 'limit': 50}
-    res = requests.get(endpoint, params=params)
+    session = HTMLSession()
+    res = session.get(endpoint, params=params)
     reviews = []
     data = None
     next_link = None
@@ -263,7 +293,7 @@ def get_branch_reviews(branch_id: str,
         next_link = data['meta'].get('next_link')
         if not next_link:
             break
-        res = requests.get(next_link)
+        res = session.get(next_link)
 
     if branch_name is not None:
         logging.info(f'Got reviews for {branch_name}')
@@ -275,8 +305,7 @@ def get_reviews_through_api(key: str, branches_data: list) -> list:
     end_data = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         results = [
-            executor.submit(get_branch_reviews,
-                            branch_data['link'].split('/')[-1], key,
+            executor.submit(get_branch_reviews, branch_data['id'], key,
                             branch_data['name'])
             for branch_data in branches_data
         ]

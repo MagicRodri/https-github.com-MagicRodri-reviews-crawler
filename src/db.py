@@ -1,4 +1,4 @@
-from pymongo import MongoClient
+import pymongo
 from pymongo.collection import Collection
 from pymongo.database import Database
 
@@ -6,20 +6,50 @@ import config
 
 
 def get_db() -> Database:
-    client = MongoClient(config.MONGO_URI)
+    client = pymongo.MongoClient(config.MONGO_URI)
     db = client[config.MONGO_DB_NAME]
     return db
 
 
-def get_reviews_collection() -> Collection:
-    db = get_db()
-    reviews = db.reviews
-    if 'id_text' not in reviews.index_information():
-        reviews.create_index(
-            [('id', 'text')],
+def get_reviews_collection(db: Database = get_db()) -> Collection:
+
+    reviews_db = db.reviews
+    if 'id' not in reviews_db.index_information():
+        reviews_db.create_index(
+            [('id', pymongo.ASCENDING)],
             unique=True,
         )
-    return reviews
+    return reviews_db
+
+
+def get_branches_collection(db: Database = get_db()) -> Collection:
+    branches_db = db.branches
+    if 'id' not in branches_db.index_information():
+        branches_db.create_index(
+            [('id', pymongo.ASCENDING)],
+            unique=True,
+        )
+    return branches_db
+
+
+def get_companies_collection(db: Database = get_db()) -> Collection:
+    companies_db = db.companies
+    if 'name_text' not in companies_db.index_information():
+        companies_db.create_index(
+            [('name', 'text')],
+            unique=True,
+        )
+    return companies_db
+
+
+def get_users_collection(db: Database = get_db()) -> Collection:
+    users_db = db.users
+    if 'id' not in users_db.index_information():
+        users_db.create_index(
+            [('id', pymongo.ASCENDING)],
+            unique=True,
+        )
+    return users_db
 
 
 def insert_review(raw_review: dict):
@@ -41,7 +71,6 @@ if __name__ == '__main__':
         'text': 'text',
         'reply': None,
     }
-    b = [a, a]
     reviews_db = get_reviews_collection()
 
-    print(reviews_db.count_documents({}))
+    print(reviews_db.index_information())
