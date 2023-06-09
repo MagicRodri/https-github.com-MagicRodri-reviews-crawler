@@ -1,7 +1,6 @@
 import asyncio
 import datetime
 import logging
-import pprint
 
 import emoji
 from dateutil.parser import isoparse
@@ -12,7 +11,7 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
 import db
 from config import REVIEW_KEY
 from scraping import get_branch_reviews, get_branches
-from utils import get_cached_datetime, send_review, set_cached_datetime
+from utils import get_cached_datetime, set_cached_datetime, send_reviews
 
 users_db = db.get_users_collection()
 companies_db = db.get_companies_collection()
@@ -40,7 +39,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         })
     logging.info("User %s started the bot" % (user_id))
     start_message = emoji.emojize(
-        ":party_popper: Hey and welcome, I'm the bot who send you reviews from 2gis !"
+        ":party_popper: Hey and welcome, I'm the bot that sends reviews from 2gis !"
     )
     await context.bot.send_message(chat_id=user_id, text=start_message)
 
@@ -131,34 +130,39 @@ async def send_each_minute(context: ContextTypes.DEFAULT_TYPE):
         logging.info(f"Last sent at {last_sent_at.isoformat()}")
         branches_with_users_ids = db.get_branches_with_users(users_db)
         logging.info("Sending repeating message")
-        tasks = []
+        sent = False
         for dico in branches_with_users_ids:
-            user_ids = dico['user_ids']
-
+            user_ids, branch_name, company_name = dico['user_ids'], dico[
+                'branch_name'], dico['company']
             reviews = get_branch_reviews(dico['branch_id'],
                                          REVIEW_KEY,
                                          limit=5)
-            for review in reviews:
-                review_date = isoparse(review['date']).astimezone()
-                if review_date < last_sent_at:
-                    continue
-                for user_id in user_ids:
-                    tasks.append(send_review(context, user_id, review))
-        await asyncio.gather(*tasks)
+            reviews_to_send = [
+                review for review in reviews
+                if isoparse(review['date']).astimezone() > last_sent_at
+            ]
+            if not reviews_to_send:
+                logging.info(f"No reviews to send for {branch_name}")
+                continue
+            logging.info(f"Sending {len(reviews_to_send)} reviews")
+            await send_reviews(context, user_ids, reviews_to_send, branch_name,
+                               company_name)
+            if not sent:
+                sent = True
     except Exception as e:
         logging.error(e)
     else:
-        if tasks:
+        if sent:
             logging.info("Sending repeating message done")
             set_cached_datetime(datetime.datetime.now())
 
 
 def setup(app: Application):
-
+    """Set the bot handlers and job queue"""
     app.add_handler(CommandHandler(command='start', callback=start))
     app.add_handler(MessageHandler(filters=filters.TEXT, callback=subscribe))
     app.add_handler(
         CallbackQueryHandler(callback=confirm_company, pattern=list))
     app.add_handler(CallbackQueryHandler(callback=branch_choice, pattern=str))
-    job_queue = app.job_queue
-    job_queue.run_repeating(send_each_minute, interval=60, first=0)
+    # job_queue = app.job_queue
+    # job_queue.run_repeating(send_each_minute, interval=60, first=0)

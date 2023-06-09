@@ -39,7 +39,7 @@ def get_companies_collection(db: Database = get_db()) -> Collection:
     if 'name_text' not in companies_db.index_information():
         companies_db.create_index(
             [('name', 'text')],
-            unique=True,
+            unique=False,
         )
     return companies_db
 
@@ -68,7 +68,8 @@ def get_branches_with_users(users_db: Database):
         "$group": {
             "_id": {
                 "branch_id": "$branches.id",
-                "branch_name": "$branches.name"
+                "branch_name": "$branches.name",
+                "company": "$branches.company.name"
             },
             "user_ids": {
                 "$addToSet": "$id"
@@ -79,6 +80,7 @@ def get_branches_with_users(users_db: Database):
             "_id": 0,
             "branch_id": "$_id.branch_id",
             "branch_name": "$_id.branch_name",
+            "company": "$_id.company",
             "user_ids": 1
         }
     }]
@@ -87,23 +89,8 @@ def get_branches_with_users(users_db: Database):
 
 if __name__ == '__main__':
     users_db = get_users_collection()
-    # users_db.insert_one({
-    #     'id': 1,
-    #     'username': 'test2',
-    #     'branches': [],
-    #     'created_at': datetime.datetime.now()
-    # })
-    # users_db.insert_one({
-    #     'id':
-    #     2,
-    #     'username':
-    #     'test3',
-    #     'branches': [{
-    #         '_id': 1,
-    #         'name': 'test',
-    #         'company': 'test'
-    #     }],
-    #     'created_at':
-    #     datetime.datetime.now()
-    # })
-    print(get_branches_with_users(users_db))
+    companies_db = get_companies_collection()
+    # print(get_branches_with_users(users_db))
+    input_text = 'быстро'
+    company = companies_db.find_one({"$text": {"$search": input_text}})
+    print(company)

@@ -6,6 +6,7 @@ import unicodedata
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+import emoji
 from fake_useragent import UserAgent
 from pyppeteer.browser import Browser
 from pyppeteer.network_manager import Request
@@ -106,16 +107,40 @@ def set_cached_datetime(new_datetime: datetime.datetime):
         pickle.dump(new_datetime.astimezone(), file)
 
 
-async def send_review(context: ContextTypes.DEFAULT_TYPE, user_id: str,
-                      review: dict):
+async def _send_review(context: ContextTypes.DEFAULT_TYPE, user_ids: list,
+                       review: dict):
     photos_urls = review['photos']
-    text = f"<b>{review['name']}:</b>\n{review['text']}"
-    if photos_urls:
-        media = [InputMediaPhoto(url) for url in photos_urls]
-        await context.bot.send_media_group(chat_id=user_id,
-                                           media=media,
+    rating_str = emoji.emojize(':star:' * review['rating'] + ':new_moon:' *
+                               (5 - review['rating']))
+    text = f'<b>{rating_str} {review["name"]}</b>\n\n{review["text"]}\n\n'
+    for user_id in user_ids:
+        if photos_urls:
+            media = [InputMediaPhoto(url) for url in photos_urls]
+            await context.bot.send_media_group(chat_id=user_id,
+                                               media=media,
+                                               caption=text,
+                                               parse_mode=ParseMode.HTML)
+        else:
+            await context.bot.send_message(chat_id=user_id,
+                                           text=text,
                                            parse_mode=ParseMode.HTML)
 
-    await context.bot.send_message(chat_id=user_id,
-                                   text=text,
-                                   parse_mode=ParseMode.HTML)
+
+async def _notify_branch(context: ContextTypes.DEFAULT_TYPE, user_ids: list,
+                         branch_name: str, company_name: str):
+    text = emoji.emojize(
+        f'<b>{company_name}</b>\n\n:pushpin::world_map: {branch_name} :pushpin::world_map:'
+    )
+    for user_id in user_ids:
+        await context.bot.send_message(chat_id=user_id,
+                                       text=text,
+                                       parse_mode=ParseMode.HTML)
+
+
+async def send_reviews(context: ContextTypes.DEFAULT_TYPE, user_ids: list,
+                       reviews: list, branch_name: str, company_name: str):
+    await _notify_branch(context, user_ids, branch_name, company_name)
+    sending_tasks = [
+        _send_review(context, user_ids, review) for review in reviews
+    ]
+    await asyncio.gather(*sending_tasks)

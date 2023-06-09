@@ -221,34 +221,38 @@ def get_branches(company_name: Optional[str] = "ташир пицца",
     branches = []
     counter = 1
     org_name = None
-    while True:
-        url = f"https://2gis.ru/{city}/search/{company_name}"
-        divs = res.html.find('div._1kf6gff')
-        for div in divs:
-            if org_name is None:
-                org_name = div.find('div span._1al0wlf span', first=True).text
-                additional = div.find('span._oqoid', first=True).text
-                if additional:
-                    org_name = f'{org_name}, {additional}'.capitalize()
-            name = div.find('div._klarpw span._1w9o2igt', first=True).text
-            link = div.find('div._zjunba a',
-                            first=True).attrs.get('href').split('?')[0]
-            branch = {
-                'id': link.split('/')[-1],
-                'name': clean_text(name),
-                'link': link,
-                'org_name': org_name
-            }
-            branches.append(branch)
+    try:
+        while True:
+            url = f"https://2gis.ru/{city}/search/{company_name}"
+            divs = res.html.find('div._1kf6gff')
+            for div in divs:
+                if org_name is None:
+                    org_name = div.find('div span._1al0wlf span',
+                                        first=True).text
+                    additional = div.find('span._oqoid', first=True).text
+                    if additional:
+                        org_name = f'{org_name}, {additional}'.capitalize()
+                name = div.find('div._klarpw span._1w9o2igt', first=True).text
+                link = div.find('div._zjunba a',
+                                first=True).attrs.get('href').split('?')[0]
+                branch = {
+                    'id': link.split('/')[-1],
+                    'name': clean_text(name),
+                    'link': link,
+                    'org_name': org_name
+                }
+                branches.append(branch)
 
-        # TODO: Deal with url returning down to first page
-        counter += 1
-        res = session.get(f"{url}/page/{counter}")
-        is_empty_page = res.html.find(
-            'div._1wpb8t2',
-            first=True) is not None or res.url == first_response_url
-        if is_empty_page:
-            break
+            # TODO: Deal with url returning down to first page
+            counter += 1
+            res = session.get(f"{url}/page/{counter}")
+            is_empty_page = res.html.find(
+                'div._1wpb8t2',
+                first=True) is not None or res.url == first_response_url
+            if is_empty_page:
+                break
+    except Exception as e:
+        logging.error(e)
 
     return branches
 
@@ -260,6 +264,8 @@ def clean_api_reviews(reviews: list) -> list:
         review['id'],
         'name':
         review['user']['name'],
+        'rating':
+        review['rating'],
         'text':
         review['text'],
         'date':
