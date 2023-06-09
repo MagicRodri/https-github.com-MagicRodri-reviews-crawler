@@ -213,6 +213,8 @@ def get_branches(company_name: Optional[str] = "ташир пицца",
     # Force the first request to succeed
     # TODO Set a retry limit
     res = session.get(url)
+    if res.status_code == 404:
+        return []
     while res.status_code != 200:
         res = session.get(url)
 

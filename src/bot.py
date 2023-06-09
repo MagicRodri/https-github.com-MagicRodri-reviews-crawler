@@ -1,13 +1,13 @@
-import asyncio
 import datetime
 import logging
 
+from telegram.constants import ParseMode
 import emoji
 from dateutil.parser import isoparse
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ContextTypes, MessageHandler, filters)
-
+from pymongo.errors import BulkWriteError
 import db
 from config import REVIEW_KEY
 from scraping import get_branch_reviews, get_branches
@@ -39,45 +39,40 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         })
     logging.info("User %s started the bot" % (user_id))
     start_message = emoji.emojize(
-        ":party_popper: Hey and welcome, I'm the bot that sends reviews from 2gis !"
+        ":confetti_ball: <b>Добро пожаловать</b> :confetti_ball: \n\n Я собираю отзывы компаний с 2гис."
     )
-    await context.bot.send_message(chat_id=user_id, text=start_message)
+    await context.bot.send_message(chat_id=user_id,
+                                   text=start_message,
+                                   parse_mode=ParseMode.HTML)
 
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Manage company subscription"""
 
     input_text = update.message.text
-    company = None
     logging.info("User %s subscribing to %s" %
                  (update.effective_chat.id, input_text))
-    company = companies_db.find_one({"$text": {"$search": input_text}})
-    if company is None:
-        logging.info("Company not in db, scraping...")
-        data = get_branches(company_name=input_text)
-        if not data:
-            logging.info('no branches found')
-            await context.bot.send_message(chat_id=update.effective_chat.id,
-                                           text='No branches found')
-            return
-        company_name = data[0]['org_name']
-        confirmation_markup = InlineKeyboardMarkup(
-            [[InlineKeyboardButton(text='Correct', callback_data=data)],
-             [InlineKeyboardButton(text='Not correct', callback_data='No')]])
+
+    logging.info("Scraping...")
+    data = get_branches(company_name=input_text)
+    if not data:
+        logging.info('no branches found')
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f"Confirm company: {company_name}",
-            reply_markup=confirmation_markup,
-        )
+            text=emoji.emojize(
+                ":confused_face: <i>Ничего не нашел, попробуйте еще раз</i>"),
+            parse_mode=ParseMode.HTML)
         return
-
-    branches = branches_db.find({'company': company})
-    branches_markup = build_branches_markup(branches)
+    company_name = data[0]['org_name']
+    confirmation_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(text='Да', callback_data=data)],
+         [InlineKeyboardButton(text='Нет', callback_data=['No'])]])
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text=f"Choose branch",
-        reply_markup=branches_markup,
-    )
+        text=f"<i>Найдено</i>: <b>{company_name}</b>",
+        reply_markup=confirmation_markup,
+        parse_mode=ParseMode.HTML)
+    return
 
 
 async def confirm_company(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,12 +80,11 @@ async def confirm_company(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     callback_data = query.data
-    if callback_data == 'No':
-        await query.edit_message_text(text='Company not confirmed')
+    if callback_data[0] == 'No':
+        await query.edit_message_text(
+            text=emoji.emojize(":pencil: <b>Введите название компании</b>"),
+            parse_mode=ParseMode.HTML)
         return
-
-    await query.edit_message_text(
-        text=f'Company has {len(callback_data)} branches')
 
     lookup = {'name': callback_data[0]['org_name']}
     result = companies_db.replace_one(lookup, lookup, upsert=True)
@@ -104,8 +98,11 @@ async def confirm_company(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text=f'Choose branch',
         reply_markup=branches_markup,
     )
-    branches_db.insert_many(callback_data)
-    context.drop_callback_data(query)
+    try:
+        branches_db.insert_many(callback_data, ordered=False)
+    except BulkWriteError as bwe:
+        # Duplicate key error
+        pass
 
 
 async def branch_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -121,7 +118,10 @@ async def branch_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 'branches': branch
                             }})
 
-    await query.edit_message_text(text=f'Branch {branch_id} chosen')
+    await query.edit_message_text(text=emoji.emojize(
+        f"<i>Добавлено</i>: <b>{branch['company']['name']}, {branch['name']}</b>:party_popper:"
+    ),
+                                  parse_mode=ParseMode.HTML)
 
 
 async def send_each_minute(context: ContextTypes.DEFAULT_TYPE):
@@ -164,5 +164,5 @@ def setup(app: Application):
     app.add_handler(
         CallbackQueryHandler(callback=confirm_company, pattern=list))
     app.add_handler(CallbackQueryHandler(callback=branch_choice, pattern=str))
-    # job_queue = app.job_queue
-    # job_queue.run_repeating(send_each_minute, interval=60, first=0)
+    job_queue = app.job_queue
+    job_queue.run_repeating(send_each_minute, interval=60, first=0)

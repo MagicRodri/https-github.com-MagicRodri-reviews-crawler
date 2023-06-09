@@ -91,6 +91,6 @@ if __name__ == '__main__':
     users_db = get_users_collection()
     companies_db = get_companies_collection()
     # print(get_branches_with_users(users_db))
-    input_text = 'быстро'
-    company = companies_db.find_one({"$text": {"$search": input_text}})
-    print(company)
+    input_text = 'додо пицца'
+    company = companies_db.find({"$text": {"$search": input_text}})
+    print(list(company))
