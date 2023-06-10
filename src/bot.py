@@ -1,17 +1,19 @@
 import datetime
 import logging
 
-from telegram.constants import ParseMode
 import emoji
 from dateutil.parser import isoparse
+from pymongo.errors import BulkWriteError
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import ParseMode
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ContextTypes, MessageHandler, filters)
-from pymongo.errors import BulkWriteError
+
+import config
 import db
 from config import REVIEW_KEY
 from scraping import get_branch_reviews, get_branches
-from utils import get_cached_datetime, set_cached_datetime, send_reviews
+from utils import get_cached_datetime, send_reviews, set_cached_datetime
 
 users_db = db.get_users_collection()
 companies_db = db.get_companies_collection()
@@ -44,6 +46,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=user_id,
                                    text=start_message,
                                    parse_mode=ParseMode.HTML)
+    await context.bot.send_message(
+        chat_id=user_id,
+        text=emoji.emojize(":pencil: <b>Введите название компании</b>"),
+        parse_mode=ParseMode.HTML)
 
 
 async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -64,9 +70,12 @@ async def subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML)
         return
     company_name = data[0]['org_name']
-    confirmation_markup = InlineKeyboardMarkup(
-        [[InlineKeyboardButton(text='Да', callback_data=data)],
-         [InlineKeyboardButton(text='Нет', callback_data=['No'])]])
+    confirmation_markup = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(text='Да', callback_data=data),
+            InlineKeyboardButton(text='Нет', callback_data=['No'])
+        ],
+    ])
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=f"<i>Найдено</i>: <b>{company_name}</b>",
@@ -95,9 +104,9 @@ async def confirm_company(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     branches_markup = build_branches_markup(callback_data)
     await query.edit_message_text(
-        text=f'Choose branch',
+        text=emoji.emojize(f"<i>Выберите филиал компании</i>:"),
         reply_markup=branches_markup,
-    )
+        parse_mode=ParseMode.HTML)
     try:
         branches_db.insert_many(callback_data, ordered=False)
     except BulkWriteError as bwe:
@@ -119,12 +128,12 @@ async def branch_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                             }})
 
     await query.edit_message_text(text=emoji.emojize(
-        f"<i>Добавлено</i>: <b>{branch['company']['name']}, {branch['name']}</b>:party_popper:"
+        f":party_popper:<i>Добавлено</i>: <b>{branch['company']['name']}, {branch['name']}</b>"
     ),
                                   parse_mode=ParseMode.HTML)
 
 
-async def send_each_minute(context: ContextTypes.DEFAULT_TYPE):
+async def send_repeating(context: ContextTypes.DEFAULT_TYPE):
     try:
         last_sent_at = get_cached_datetime()
         logging.info(f"Last sent at {last_sent_at.isoformat()}")
@@ -157,6 +166,49 @@ async def send_each_minute(context: ContextTypes.DEFAULT_TYPE):
             set_cached_datetime(datetime.datetime.now())
 
 
+async def remove_branch(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Remove branch from user's subscription"""
+    user = users_db.find_one({'id': update.effective_chat.id})
+    if not user:
+        return
+    user_branches = user['branches']
+    if not user_branches:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=emoji.emojize(
+                ":confused_face: <i>Вы не подписаны ни на одну компанию</i>"),
+            parse_mode=ParseMode.HTML)
+        return
+    branches_markup = build_branches_markup(user_branches)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=emoji.emojize(
+            ":cross_mark: <i>Выберите компанию, от которой хотите отписаться</i> :cross_mark:"
+        ),
+        reply_markup=branches_markup,
+        parse_mode=ParseMode.HTML)
+
+
+async def remove_branch_callback(update: Update,
+                                 context: ContextTypes.DEFAULT_TYPE):
+    """Remove branch callback"""
+    query = update.callback_query
+    await query.answer()
+    branch_id = query.data
+    user = users_db.find_one({'id': query.from_user.id})
+    branch = branches_db.find_one({'id': branch_id})
+    if branch in user['branches']:
+        users_db.update_one({'id': query.from_user.id},
+                            {'$pull': {
+                                'branches': branch
+                            }})
+
+    await query.edit_message_text(text=emoji.emojize(
+        f"<i>Удалено</i>: <b>{branch['company']['name']}, {branch['name']}</b>:cross_mark:"
+    ),
+                                  parse_mode=ParseMode.HTML)
+
+
 def setup(app: Application):
     """Set the bot handlers and job queue"""
     app.add_handler(CommandHandler(command='start', callback=start))
@@ -165,4 +217,6 @@ def setup(app: Application):
         CallbackQueryHandler(callback=confirm_company, pattern=list))
     app.add_handler(CallbackQueryHandler(callback=branch_choice, pattern=str))
     job_queue = app.job_queue
-    job_queue.run_repeating(send_each_minute, interval=60, first=0)
+    job_queue.run_repeating(send_repeating,
+                            interval=config.SENDING_INTERVAL,
+                            first=0)
