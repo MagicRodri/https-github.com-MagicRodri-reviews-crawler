@@ -2,7 +2,6 @@ import argparse
 import asyncio
 import json
 import logging
-import pprint
 import sys
 
 from pyppeteer import launch
@@ -28,7 +27,6 @@ async def main(headless):
         await browser.close()
         sys.exit(0)
     reviews = get_reviews_through_api(key, data)
-    pprint.pprint(reviews)
     with open('scraped.json', 'w') as f:
         json.dump(reviews, f, ensure_ascii=False, indent=4)
 

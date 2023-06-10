@@ -44,8 +44,8 @@ async def save_cookies(page: Page):
         json.dump(cookies, f)
 
 
-async def get_new_page(browser: Browser | None = None,
-                       page: Page | None = None) -> Page:
+async def get_new_page(browser: Browser or None = None,
+                       page: Page or None = None) -> Page:
     if browser is None and page is None:
         raise RuntimeError('browser or page must be provided')
     if browser:

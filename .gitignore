@@ -1,3 +1,4 @@
+*.service
 *.pickle
 *.db
 *.json

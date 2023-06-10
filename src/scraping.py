@@ -15,7 +15,7 @@ from utils import (clean_text, get_new_page, get_reviews_api_key,
 
 
 async def _close_cookies_footer_if_needed(page: Page,
-                                          close_selector: str | None = None):
+                                          close_selector: str or None = None):
     if close_selector is None:
         close_selector = '._euwdl0'
     close_btn = await page.querySelector(close_selector)
@@ -170,8 +170,8 @@ def safe_scrape(scraper_function,
 
 @safe_scrape
 async def scrape_branch_reviews(branch_data: dict,
-                                page: Page | None = None,
-                                browser: Browser | None = None,
+                                page: Page or None = None,
+                                browser: Browser or None = None,
                                 ensure_reviews_loaded: Optional[bool] = True):
     """Scrape reviews from a branch"""
     if page is None and browser is None:
@@ -282,7 +282,7 @@ def clean_api_reviews(reviews: list) -> list:
 
 def get_branch_reviews(branch_id: str,
                        key: str,
-                       branch_name: str | None = None,
+                       branch_name: str or None = None,
                        limit: int = 50,
                        get_all: bool = False) -> list:
     """Get branch reviews through public api"""
