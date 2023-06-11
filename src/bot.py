@@ -1,11 +1,10 @@
 import datetime
 import logging
-import re
 
 import emoji
 from dateutil.parser import isoparse
 from pymongo.errors import BulkWriteError
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardRemove, Update, ReplyKeyboardMarkup
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, ReplyKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ConversationHandler, ContextTypes, MessageHandler,
@@ -21,8 +20,10 @@ users_db = db.get_users_collection()
 companies_db = db.get_companies_collection()
 branches_db = db.get_branches_collection()
 
-ADD, REMOVE, SHOW = ['➕Добавить', '❌Удалить', 'Показать']
-main_menu_markup = [[ADD, REMOVE], [SHOW]]
+ADD, REMOVE, SHOW = ['✅Добавить', '❌Удалить', 'Показать']
+main_menu_markup = ReplyKeyboardMarkup([[ADD, REMOVE], [SHOW]],
+                                       one_time_keyboard=True,
+                                       resize_keyboard=True)
 (COMPANY_INPUT, COMPANY_CONFIRMATION, ADD_BRANCH_CHOICE, REMOVE_BRANCH_CHOICE,
  SHOW_BRANCH_CHOICE) = range(1, 6)
 
@@ -52,11 +53,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await context.bot.send_message(chat_id=user_id,
                                    text=start_message,
-                                   reply_markup=ReplyKeyboardMarkup(
-                                       main_menu_markup,
-                                       one_time_keyboard=True,
-                                       resize_keyboard=True),
                                    parse_mode=ParseMode.HTML)
+    await show_menu(update, context)
+
+
+async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=emoji.emojize(":mobile_phone:<b>Выберите действие</b>"),
+        parse_mode=ParseMode.HTML,
+        reply_markup=main_menu_markup)
 
 
 async def reply_keyboard_callback(update: Update,
@@ -79,7 +85,7 @@ async def reply_keyboard_callback(update: Update,
                     ":confused_face: <i>Вы еще не добавили ни одной компании</i>"
                 ),
                 parse_mode=ParseMode.HTML)
-            return
+            await show_menu(update, context)
         branches = user['branches']
         branches_markup = build_branches_markup(branches)
         await context.bot.send_message(
@@ -97,7 +103,7 @@ async def reply_keyboard_callback(update: Update,
                     ":confused_face: <i>Вы еще не добавили ни одной компании</i>"
                 ),
                 parse_mode=ParseMode.HTML)
-            return
+            await show_menu(update, context)
         branches = user['branches']
         branches_markup = build_branches_markup(branches)
         await context.bot.send_message(
@@ -151,7 +157,7 @@ async def confirm_company(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             text=emoji.emojize(":pencil: <b>Введите название компании</b>"),
             parse_mode=ParseMode.HTML)
-        return
+        return COMPANY_INPUT
 
     lookup = {'name': callback_data[0]['org_name']}
     result = companies_db.replace_one(lookup, lookup, upsert=True)
@@ -188,7 +194,7 @@ async def add_branch_choice(update: Update,
                             }})
 
     await query.edit_message_text(text=emoji.emojize(
-        f":party_popper:<i>Добавлено</i>: <b>{branch['company']['name']}, {branch['name']}</b>"
+        f"✅<i>Добавлено</i>: <b>{branch['company']['name']}, {branch['name']}</b>"
     ),
                                   parse_mode=ParseMode.HTML)
     return ConversationHandler.END
@@ -236,6 +242,7 @@ async def show_branch_reviews(update: Update,
                        reviews=reviews,
                        branch_name=branch['name'],
                        company_name=branch['company']['name'])
+    await show_menu(update, context)
     return ConversationHandler.END
 
 
@@ -275,11 +282,14 @@ async def send_repeating(context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel conversation and return to main menu"""
     user = update.effective_user
-    logging.info(f"User {user.name} canceled the conversation.")
-    await update.message.reply_text(
-        emoji.emojize(":mobile_phone:<b>Выберите действие</b>"),
-        parse_mode=ParseMode.HTML)
+    logging.info(f"User {user.id} canceled the conversation.")
+    await show_menu(update, context)
     return ConversationHandler.END
+
+
+async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send feedback"""
+    pass
 
 
 def setup(app: Application):
@@ -287,79 +297,72 @@ def setup(app: Application):
 
     app.add_handler(CommandHandler(command='start', callback=start))
 
-    app.add_handler(
-        ConversationHandler(
-            entry_points=[
-                MessageHandler(filters=filters.Text([ADD]),
-                               callback=reply_keyboard_callback),
+    add_handler = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters=filters.Text([ADD]),
+                           callback=reply_keyboard_callback),
+        ],
+        states={
+            COMPANY_INPUT: [
+                MessageHandler(filters=filters.TEXT & (~filters.COMMAND),
+                               callback=company_input)
             ],
-            states={
-                COMPANY_INPUT: [
-                    MessageHandler(filters=filters.TEXT & (~filters.COMMAND),
-                                   callback=company_input)
-                ],
-                COMPANY_CONFIRMATION:
-                [CallbackQueryHandler(callback=confirm_company, pattern=list)],
-                ADD_BRANCH_CHOICE: [
-                    CallbackQueryHandler(callback=add_branch_choice,
-                                         pattern=str)
-                ]
-            },
-            fallbacks=[
-                CommandHandler(command='cancel', callback=cancel),
-            ],
-            allow_reentry=True,
-            per_user=True,
-            per_chat=False,
-            per_message=False,
-            name='add_branch',
-            conversation_timeout=60 * 5))
+            COMPANY_CONFIRMATION:
+            [CallbackQueryHandler(callback=confirm_company, pattern=list)],
+            ADD_BRANCH_CHOICE:
+            [CallbackQueryHandler(callback=add_branch_choice, pattern=str)]
+        },
+        fallbacks=[
+            CommandHandler(command='cancel', callback=cancel),
+        ],
+        allow_reentry=True,
+        per_user=True,
+        per_chat=True,
+        per_message=False,
+        name='add_branch',
+        conversation_timeout=60 * 5)
 
-    app.add_handler(
-        ConversationHandler(entry_points=[
+    remove_handler = ConversationHandler(
+        entry_points=[
             MessageHandler(filters=filters.Text([REMOVE]),
                            callback=reply_keyboard_callback),
         ],
-                            states={
-                                REMOVE_BRANCH_CHOICE: [
-                                    CallbackQueryHandler(
-                                        callback=remove_branch_choice,
-                                        pattern=str)
-                                ]
-                            },
-                            fallbacks=[
-                                CommandHandler(command='cancel',
-                                               callback=cancel),
-                            ],
-                            allow_reentry=True,
-                            per_user=True,
-                            per_chat=False,
-                            per_message=False,
-                            name='remove_branch',
-                            conversation_timeout=60 * 5))
+        states={
+            REMOVE_BRANCH_CHOICE:
+            [CallbackQueryHandler(callback=remove_branch_choice, pattern=str)]
+        },
+        fallbacks=[
+            CommandHandler(command='cancel', callback=cancel),
+        ],
+        allow_reentry=True,
+        per_user=True,
+        per_chat=True,
+        per_message=False,
+        name='remove_branch',
+        conversation_timeout=60 * 5)
 
-    app.add_handler(
-        ConversationHandler(entry_points=[
+    show_handler = ConversationHandler(
+        entry_points=[
             MessageHandler(filters=filters.Text([SHOW]),
                            callback=reply_keyboard_callback),
         ],
-                            states={
-                                SHOW_BRANCH_CHOICE: [
-                                    CallbackQueryHandler(
-                                        callback=show_branch_reviews,
-                                        pattern=str)
-                                ]
-                            },
-                            fallbacks=[
-                                CommandHandler(command='cancel',
-                                               callback=cancel),
-                            ],
-                            allow_reentry=True,
-                            per_user=True,
-                            per_chat=False,
-                            per_message=False,
-                            name='show_branch',
-                            conversation_timeout=60 * 5))
+        states={
+            SHOW_BRANCH_CHOICE:
+            [CallbackQueryHandler(callback=show_branch_reviews, pattern=str)]
+        },
+        fallbacks=[
+            CommandHandler(command='cancel', callback=cancel),
+        ],
+        allow_reentry=True,
+        per_user=True,
+        per_chat=True,
+        per_message=False,
+        name='show_branch',
+        conversation_timeout=60 * 5)
+
+    app.add_handler(add_handler)
+    app.add_handler(remove_handler)
+    app.add_handler(show_handler)
 
     job_queue = app.job_queue
     job_queue.run_repeating(send_repeating,

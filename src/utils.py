@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import emoji
+from dateutil.parser import isoparse
 from fake_useragent import UserAgent
 from pyppeteer.browser import Browser
 from pyppeteer.network_manager import Request
@@ -112,7 +113,13 @@ async def _send_review(context: ContextTypes.DEFAULT_TYPE, user_ids: list,
     photos_urls = review['photos']
     rating_str = emoji.emojize(':star:' * review['rating'] + ':new_moon:' *
                                (5 - review['rating']))
-    text = f'<b>{rating_str} {review["name"]}</b>\n\n{review["text"]}\n\n'
+
+    # TODO: Better way to handle timezones
+    # As for now, just adapting to ufa timezone
+    date_str = (isoparse(review['date']) -
+                datetime.timedelta(hours=2)).strftime('%d %B %Y %H:%M')
+
+    text = f'<b>{rating_str} {review["name"]}</b>\n<i>{date_str}</i>\n\n{review["text"]}\n\n'
     for user_id in user_ids:
         if photos_urls:
             media = [InputMediaPhoto(url) for url in photos_urls]
@@ -128,9 +135,7 @@ async def _send_review(context: ContextTypes.DEFAULT_TYPE, user_ids: list,
 
 async def _notify_branch(context: ContextTypes.DEFAULT_TYPE, user_ids: list,
                          branch_name: str, company_name: str):
-    text = emoji.emojize(
-        f'<b>{company_name}</b>\n\n:pushpin::world_map: {branch_name} :pushpin::world_map:'
-    )
+    text = emoji.emojize(f'<b>{company_name}</b>\n\n📍 {branch_name} 📍')
     for user_id in user_ids:
         await context.bot.send_message(chat_id=user_id,
                                        text=text,
