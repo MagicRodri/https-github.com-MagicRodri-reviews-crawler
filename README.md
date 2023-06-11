@@ -2,6 +2,6 @@
 
 ## Description
 
-This [bot](https://t.me/RoReviewsBot) is designed to collect reviews from [2gis](https://2gis.ru) and send them to subscribers on telegram.
+This [bot](https://t.me/RoReviewsBot) is designed to notify subscribers for new reviews from [2gis](https://2gis.ru) on telegram.
 
 ## Usage

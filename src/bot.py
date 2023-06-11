@@ -289,7 +289,7 @@ async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     button = InlineKeyboardButton(text="📧 Написать", url=TG_LINK)
     markup = InlineKeyboardMarkup([[button]])
     await context.bot.send_message(chat_id=update.effective_chat.id,
-                                   text=f"<i>Отправьте ваш сообщение</i>",
+                                   text=f"<i>Отправьте ваше сообщение</i>",
                                    reply_markup=markup,
                                    parse_mode=ParseMode.HTML)
 
