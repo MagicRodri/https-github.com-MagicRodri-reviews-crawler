@@ -12,7 +12,7 @@ from fake_useragent import UserAgent
 from pyppeteer.browser import Browser
 from pyppeteer.network_manager import Request
 from pyppeteer.page import Page
-from telegram import InputMediaPhoto
+from telegram import InputMediaPhoto, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
@@ -149,3 +149,17 @@ async def send_reviews(context: ContextTypes.DEFAULT_TYPE, user_ids: list,
         _send_review(context, user_ids, review) for review in reviews
     ]
     await asyncio.gather(*sending_tasks)
+
+
+def build_branches_markup(
+        branches: list,
+        with_company_name: bool = False) -> InlineKeyboardMarkup:
+    colums = []
+    for branch in branches:
+        text = branch['name']
+        if with_company_name:
+            company_name = branch['company']['name'].split(',')[0]
+            text = f"{company_name} - {text}"
+        colums.append(
+            InlineKeyboardButton(text=text, callback_data=branch['id']))
+    return InlineKeyboardMarkup.from_column(colums)

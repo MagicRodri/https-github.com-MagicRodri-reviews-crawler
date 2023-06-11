@@ -10,11 +10,10 @@ from telegram.ext import (Application, CallbackQueryHandler, CommandHandler,
                           ConversationHandler, ContextTypes, MessageHandler,
                           filters)
 
-import config
 import db
-from config import REVIEW_KEY
+from config import REVIEW_KEY, TG_LINK, SENDING_INTERVAL
 from scraping import get_branch_reviews, get_branches
-from utils import get_cached_datetime, send_reviews, set_cached_datetime
+from utils import get_cached_datetime, send_reviews, set_cached_datetime, build_branches_markup
 
 users_db = db.get_users_collection()
 companies_db = db.get_companies_collection()
@@ -28,15 +27,6 @@ main_menu_markup = ReplyKeyboardMarkup([[ADD, REMOVE], [SHOW]],
  SHOW_BRANCH_CHOICE) = range(1, 6)
 
 
-def build_branches_markup(branches: list) -> InlineKeyboardMarkup:
-    colums = []
-    for branch in branches:
-        colums.append(
-            InlineKeyboardButton(text=branch['name'],
-                                 callback_data=branch['id']))
-    return InlineKeyboardMarkup.from_column(colums)
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_chat.id
     username = update.effective_chat.username
@@ -48,9 +38,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             'created_at': datetime.datetime.now()
         })
     logging.info("User %s started the bot" % (user_id))
-    start_message = emoji.emojize(
-        ":confetti_ball: <b>Добро пожаловать</b> :confetti_ball: \n\n Я собираю отзывы компаний с 2гис."
-    )
+    start_message = "🎊 <b>Добро пожаловать</b> 🎊 \n\n Я собираю отзывы компаний с 2гис."
     await context.bot.send_message(chat_id=user_id,
                                    text=start_message,
                                    parse_mode=ParseMode.HTML)
@@ -87,7 +75,8 @@ async def reply_keyboard_callback(update: Update,
                 parse_mode=ParseMode.HTML)
             await show_menu(update, context)
         branches = user['branches']
-        branches_markup = build_branches_markup(branches)
+        branches_markup = build_branches_markup(branches,
+                                                with_company_name=True)
         await context.bot.send_message(
             chat_id=user_id,
             text="<i>Выберите компанию, которую хотите удалить</i>",
@@ -105,7 +94,8 @@ async def reply_keyboard_callback(update: Update,
                 parse_mode=ParseMode.HTML)
             await show_menu(update, context)
         branches = user['branches']
-        branches_markup = build_branches_markup(branches)
+        branches_markup = build_branches_markup(branches,
+                                                with_company_name=True)
         await context.bot.send_message(
             chat_id=user_id,
             text=emoji.emojize(
@@ -193,10 +183,15 @@ async def add_branch_choice(update: Update,
                                 'branches': branch
                             }})
 
-    await query.edit_message_text(text=emoji.emojize(
-        f"✅<i>Добавлено</i>: <b>{branch['company']['name']}, {branch['name']}</b>"
-    ),
-                                  parse_mode=ParseMode.HTML)
+        await query.edit_message_text(text=emoji.emojize(
+            f"✅<i>Добавлено</i>: <b>{branch['company']['name']}, {branch['name']}</b>"
+        ),
+                                      parse_mode=ParseMode.HTML)
+    else:
+        await query.edit_message_text(text=emoji.emojize(
+            f"<i>Уже добавлено</i>: <b>{branch['company']['name']}, {branch['name']}</b>"
+        ),
+                                      parse_mode=ParseMode.HTML)
     return ConversationHandler.END
 
 
@@ -215,7 +210,7 @@ async def remove_branch_choice(update: Update,
                             }})
 
     await query.edit_message_text(text=emoji.emojize(
-        f":cross_mark:<i>Удалено</i>: <b>{branch['company']['name']}, {branch['name']}</b>"
+        f"❌<i>Удалено</i>: <b>{branch['company']['name']}, {branch['name']}</b>"
     ),
                                   parse_mode=ParseMode.HTML)
     return ConversationHandler.END
@@ -289,7 +284,13 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send feedback"""
-    pass
+    button = InlineKeyboardButton(text="📧", url=TG_LINK)
+    markup = InlineKeyboardMarkup([[button]])
+
+    await context.bot.send_message(chat_id=update.effective_chat.id,
+                                   text=f"<i>Отправьте ваш отзыв</i>",
+                                   reply_markup=markup,
+                                   parse_mode=ParseMode.HTML)
 
 
 def setup(app: Application):
@@ -319,8 +320,7 @@ def setup(app: Application):
         per_user=True,
         per_chat=True,
         per_message=False,
-        name='add_branch',
-        conversation_timeout=60 * 5)
+        name='add_branch')
 
     remove_handler = ConversationHandler(
         entry_points=[
@@ -338,8 +338,7 @@ def setup(app: Application):
         per_user=True,
         per_chat=True,
         per_message=False,
-        name='remove_branch',
-        conversation_timeout=60 * 5)
+        name='remove_branch')
 
     show_handler = ConversationHandler(
         entry_points=[
@@ -357,14 +356,12 @@ def setup(app: Application):
         per_user=True,
         per_chat=True,
         per_message=False,
-        name='show_branch',
-        conversation_timeout=60 * 5)
+        name='show_branch')
 
     app.add_handler(add_handler)
     app.add_handler(remove_handler)
     app.add_handler(show_handler)
+    app.add_handler(CommandHandler(command='feedback', callback=feedback))
 
     job_queue = app.job_queue
-    job_queue.run_repeating(send_repeating,
-                            interval=config.SENDING_INTERVAL,
-                            first=0)
+    job_queue.run_repeating(send_repeating, interval=SENDING_INTERVAL, first=0)

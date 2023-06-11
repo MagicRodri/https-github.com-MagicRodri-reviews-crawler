@@ -12,6 +12,7 @@ SENDING_INTERVAL = int(os.getenv('SENDING_INTERVAL', 60 * 30))
 # Telegram
 TG_TOKEN = os.getenv('TG_TOKEN', '')
 SECRET_KEY = os.getenv('SECRET_KEY')
+TG_LINK = os.getenv('TG_LINK', '')
 
 # Database
 MONGO_URI = os.getenv('MONGO_URI')
