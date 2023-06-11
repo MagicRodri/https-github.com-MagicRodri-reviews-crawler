@@ -74,6 +74,7 @@ async def reply_keyboard_callback(update: Update,
                 ),
                 parse_mode=ParseMode.HTML)
             await show_menu(update, context)
+            return
         branches = user['branches']
         branches_markup = build_branches_markup(branches,
                                                 with_company_name=True)
@@ -93,6 +94,7 @@ async def reply_keyboard_callback(update: Update,
                 ),
                 parse_mode=ParseMode.HTML)
             await show_menu(update, context)
+            return
         branches = user['branches']
         branches_markup = build_branches_markup(branches,
                                                 with_company_name=True)
