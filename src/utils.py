@@ -10,6 +10,7 @@ import emoji
 from dateutil.parser import isoparse
 from fake_useragent import UserAgent
 from pyppeteer.browser import Browser
+from pyppeteer.launcher import launch
 from pyppeteer.network_manager import Request
 from pyppeteer.page import Page
 from telegram import InputMediaPhoto, InlineKeyboardMarkup, InlineKeyboardButton
@@ -17,6 +18,10 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 import config
+
+####
+## Scraping utils
+####
 
 
 def clean_text(raw_text: str) -> str:
@@ -64,8 +69,12 @@ async def safe_close_page(page):
     return False
 
 
-async def get_reviews_api_key(page: Page, reviews_url: str) -> str:
-
+async def get_reviews_api_key(
+        reviews_url:
+    str = "https://2gis.ru/ufa/branches/2393075273031352/firm/70000001007027017/tab/reviews",
+        page: Page or None = None) -> str:
+    if page is None:
+        raise RuntimeError('page must be provided')
     intercepted_request = None
     page.on('request', lambda req: asyncio.ensure_future(intercept(req)))
 
@@ -82,9 +91,12 @@ async def get_reviews_api_key(page: Page, reviews_url: str) -> str:
     query_params = parse_qs(parsed_url.query)
     # the key or an empty string
     key = query_params.get('key', [''])[0]
-
     return key
 
+
+####
+## Telegram utils
+####
 
 # File path to store the cached datetime
 cache_file = "cached_datetime.pickle"

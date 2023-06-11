@@ -7,7 +7,7 @@ import sys
 from pyppeteer import launch
 
 from scraping import get_branches_data, get_reviews_through_api
-from utils import get_new_page
+from utils import get_new_page, get_reviews_api_key
 
 
 async def main(headless):
@@ -20,8 +20,8 @@ async def main(headless):
     pages = await browser.pages()
     page = await get_new_page(page=pages[0])
 
-    key, data = await get_branches_data(page, company_name='ташир пицца')
-
+    data = await get_branches_data(page, company_name='ташир пицца')
+    key = await get_reviews_api_key(page=page)
     if not data:
         logging.info('no branches found')
         await browser.close()

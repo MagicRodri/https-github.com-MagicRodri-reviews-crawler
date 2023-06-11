@@ -133,7 +133,7 @@ async def get_review_data(page: Page, review: ElementHandle) -> dict:
 async def get_branches_data(
         page: Page,
         city: Optional[str] = 'ufa',
-        company_name: Optional[str] = 'Вкусно — и точка') -> tuple[str, list]:
+        company_name: Optional[str] = 'Вкусно — и точка') -> list[dict]:
     """Get all branches links from 2gis.ru"""
 
     branches_data = []
@@ -149,13 +149,9 @@ async def get_branches_data(
         branches_data.extend(await extract_branches_data_from_divs(page, divs))
     logging.info(f"Extracted {len(branches_data)} branches' data")
 
-    if branches_data:
-        key = await get_reviews_api_key(
-            page, f"https://2gis.ru{branches_data[0]['link']}/tab/reviews")
-
     await save_cookies(page)
     await safe_close_page(page)
-    return key, branches_data
+    return branches_data
 
 
 def safe_scrape(scraper_function,

@@ -21,7 +21,7 @@ branches_db = db.get_branches_collection()
 
 ADD, REMOVE, SHOW = ['✅Добавить', '❌Удалить', 'Показать']
 main_menu_markup = ReplyKeyboardMarkup([[ADD, REMOVE], [SHOW]],
-                                       one_time_keyboard=True,
+                                       one_time_keyboard=False,
                                        resize_keyboard=True)
 (COMPANY_INPUT, COMPANY_CONFIRMATION, ADD_BRANCH_CHOICE, REMOVE_BRANCH_CHOICE,
  SHOW_BRANCH_CHOICE) = range(1, 6)
@@ -73,7 +73,7 @@ async def reply_keyboard_callback(update: Update,
                     ":confused_face: <i>Вы еще не добавили ни одной компании</i>"
                 ),
                 parse_mode=ParseMode.HTML)
-            await show_menu(update, context)
+            # await show_menu(update, context)
             return
         branches = user['branches']
         branches_markup = build_branches_markup(branches,
@@ -93,7 +93,7 @@ async def reply_keyboard_callback(update: Update,
                     ":confused_face: <i>Вы еще не добавили ни одной компании</i>"
                 ),
                 parse_mode=ParseMode.HTML)
-            await show_menu(update, context)
+            # await show_menu(update, context)
             return
         branches = user['branches']
         branches_markup = build_branches_markup(branches,
@@ -239,7 +239,7 @@ async def show_branch_reviews(update: Update,
                        reviews=reviews,
                        branch_name=branch['name'],
                        company_name=branch['company']['name'])
-    await show_menu(update, context)
+    # await show_menu(update, context)
     return ConversationHandler.END
 
 
@@ -280,17 +280,16 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancel conversation and return to main menu"""
     user = update.effective_user
     logging.info(f"User {user.id} canceled the conversation.")
-    await show_menu(update, context)
+    # await show_menu(update, context)
     return ConversationHandler.END
 
 
 async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send feedback"""
-    button = InlineKeyboardButton(text="📧", url=TG_LINK)
+    button = InlineKeyboardButton(text="📧 Написать", url=TG_LINK)
     markup = InlineKeyboardMarkup([[button]])
-
     await context.bot.send_message(chat_id=update.effective_chat.id,
-                                   text=f"<i>Отправьте ваш отзыв</i>",
+                                   text=f"<i>Отправьте ваш сообщение</i>",
                                    reply_markup=markup,
                                    parse_mode=ParseMode.HTML)
 

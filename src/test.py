@@ -1,4 +1,5 @@
 from scraping import get_branches
+
 import pprint
 
 if __name__ == '__main__':
