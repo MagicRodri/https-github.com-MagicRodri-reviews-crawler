@@ -16,7 +16,7 @@ def main():
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     # For datetime formatting
-    locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
+    # locale.setlocale(locale.LC_TIME, 'ru_RU.UTF-8')
 
     app = ApplicationBuilder().token(TG_TOKEN).arbitrary_callback_data(
         True).build()
