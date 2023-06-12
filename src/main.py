@@ -4,7 +4,6 @@ import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder
 
-from bot import setup
 from config import TG_TOKEN
 
 
