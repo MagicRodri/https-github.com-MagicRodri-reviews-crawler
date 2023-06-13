@@ -116,15 +116,22 @@ async def company_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
                  (update.effective_chat.id, input_text))
 
     logging.info("Scraping...")
+    message = await context.bot.send_message(chat_id=update.effective_chat.id,
+                                             text="⏳⌛ <i>Ищу компанию...</i>",
+                                             parse_mode=ParseMode.HTML)
+
     data = get_branches(company_name=input_text)
     if not data:
         logging.info('no branches found')
-        await context.bot.send_message(
+        await context.bot.edit_message_text(
             chat_id=update.effective_chat.id,
+            message_id=message.message_id,
             text=emoji.emojize(
                 ":confused_face: <i>Ничего не нашел, попробуйте еще раз</i>"),
             parse_mode=ParseMode.HTML)
         return
+
+    logging.info('branches found')
     company_name = data[0]['org_name']
     confirmation_markup = InlineKeyboardMarkup([
         [
@@ -132,11 +139,13 @@ async def company_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             InlineKeyboardButton(text='Нет', callback_data=['No'])
         ],
     ])
-    await context.bot.send_message(
+    await context.bot.edit_message_text(
         chat_id=update.effective_chat.id,
+        message_id=message.message_id,
         text=f"<i>Найдено</i>: <b>{company_name}</b>",
         reply_markup=confirmation_markup,
         parse_mode=ParseMode.HTML)
+
     return COMPANY_CONFIRMATION
 
 
@@ -231,7 +240,7 @@ async def show_branch_reviews(update: Update,
             text=emoji.emojize(f":confused_face:<i>Нет отзывов</i>"),
             parse_mode=ParseMode.HTML)
         return ConversationHandler.END
-
+    await query.message.delete()
     branch = branches_db.find_one({'id': branch_id})
     user_id = query.from_user.id
     await send_reviews(context=context,
@@ -306,7 +315,8 @@ def setup(app: Application):
         ],
         states={
             COMPANY_INPUT: [
-                MessageHandler(filters=filters.TEXT & (~filters.COMMAND),
+                MessageHandler(filters=filters.TEXT & (~filters.COMMAND) &
+                               (~filters.Text([ADD, REMOVE, SHOW])),
                                callback=company_input)
             ],
             COMPANY_CONFIRMATION:
@@ -321,6 +331,7 @@ def setup(app: Application):
         per_user=True,
         per_chat=True,
         per_message=False,
+        persistent=True,
         name='add_branch')
 
     remove_handler = ConversationHandler(
@@ -339,6 +350,7 @@ def setup(app: Application):
         per_user=True,
         per_chat=True,
         per_message=False,
+        persistent=True,
         name='remove_branch')
 
     show_handler = ConversationHandler(
@@ -357,6 +369,7 @@ def setup(app: Application):
         per_user=True,
         per_chat=True,
         per_message=False,
+        persistent=True,
         name='show_branch')
 
     app.add_handler(add_handler)
